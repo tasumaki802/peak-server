@@ -1,6 +1,6 @@
 import express from "express";
-import OpenAI from "openai";
 import cors from "cors";
+import OpenAI from "openai";
 
 const app = express();
 app.use(cors());
@@ -11,37 +11,37 @@ const openai = new OpenAI({
 });
 
 app.post("/analyse-image", async (req, res) => {
-  const imageBase64 = req.body.image;
+  try {
+    const image = req.body.image;
 
-  const vision = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "text", text: "Liste les ingrédients visibles." },
-          { type: "image_url", image_url: { url: imageBase64 } }
-        ]
-      }
-    ]
-  });
+    const response = await openai.responses.create({
+      model: "gpt-4o-mini",
+      input: [
+        {
+          role: "user",
+          content: [
+            { type: "input_text", text: "Liste les aliments visibles sur cette image." },
+            { type: "input_image", image_url: image }
+          ]
+        }
+      ]
+    });
 
-  const ingredients = vision.choices[0].message.content;
+    const ingredients = response.output_text;
 
-  const recipe = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      {
-        role: "user",
-        content: `Fais une recette simple avec : ${ingredients}`
-      }
-    ]
-  });
+    const recipe = await openai.responses.create({
+      model: "gpt-4o-mini",
+      input: `Fais une recette simple avec : ${ingredients}`
+    });
 
-  res.json({
-    ingredients,
-    recipe: recipe.choices[0].message.content
-  });
+    res.json({
+      ingredients,
+      recipe: recipe.output_text
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.listen(3000, () => console.log("Server running"));
