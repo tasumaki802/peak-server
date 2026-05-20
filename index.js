@@ -10,12 +10,11 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// ROUTE PRINCIPALE
 app.post("/analyse-image", async (req, res) => {
   try {
     const image = req.body.image;
 
-    // 1. ingrédients
+    // 1. INGREDIENTS
     const vision = await openai.responses.create({
       model: "gpt-4o-mini",
       input: [
@@ -31,7 +30,7 @@ app.post("/analyse-image", async (req, res) => {
 
     const ingredients = vision.output_text;
 
-    // 2. recette
+    // 2. RECETTE
     const recipe = await openai.responses.create({
       model: "gpt-4o-mini",
       input: `Fais une recette simple, claire et rapide avec ces ingrédients : ${ingredients}`
@@ -39,22 +38,36 @@ app.post("/analyse-image", async (req, res) => {
 
     const recipeText = recipe.output_text;
 
-    // 3. macros
+    // 3. MACROS (JSON PROPRE)
     const macros = await openai.responses.create({
       model: "gpt-4o-mini",
-      input: `
-Donne uniquement un JSON propre avec :
-- calories
-- protein
-- carbs
-- fat
+      input: `Donne uniquement un JSON STRICT sans texte autour :
+
+{
+  "calories": number,
+  "protein": number,
+  "carbs": number,
+  "fat": number
+}
 
 pour cette recette :
-${recipeText}
-      `
+${recipeText}`
     });
 
-    // 4. image du plat
+    let macrosParsed;
+
+    try {
+      macrosParsed = JSON.parse(macros.output_text);
+    } catch (e) {
+      macrosParsed = {
+        calories: 0,
+        protein: 0,
+        carbs: 0,
+        fat: 0
+      };
+    }
+
+    // 4. IMAGE DU PLAT
     const imageGen = await openai.images.generate({
       model: "gpt-image-1",
       prompt: `realistic high quality food photo of: ${recipeText}`,
@@ -64,7 +77,7 @@ ${recipeText}
     res.json({
       ingredients,
       recipe: recipeText,
-      macros: macros.output_text,
+      macros: macrosParsed,
       image: imageGen.data[0].url
     });
 
@@ -73,7 +86,6 @@ ${recipeText}
   }
 });
 
-// SERVER START
 app.listen(3000, () => {
   console.log("Server running");
 });
