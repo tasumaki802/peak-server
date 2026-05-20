@@ -1,6 +1,9 @@
 import express from "express";
 import cors from "cors";
 import OpenAI from "openai";
+import dotenv from "dotenv";
+
+dotenv.config(); // 🔥 OBLIGATOIRE pour lire .env
 
 const app = express();
 app.use(cors());
@@ -12,60 +15,50 @@ const openai = new OpenAI({
 
 app.post("/analyse-image", async (req, res) => {
   try {
-    const image = req.body.image;
+    const { image } = req.body;
 
     if (!image) {
       return res.status(400).json({ error: "Image manquante" });
     }
 
-    // 1. Analyse image (ingrédients)
+    // 1️⃣ Analyse image → ingrédients
     const vision = await openai.responses.create({
       model: "gpt-4o-mini",
-      input: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: "Liste simplement les aliments visibles sur cette image."
-            },
-            {
-              type: "input_image",
-              image_url: image
-            }
-          ]
-        }
-      ]
+      input: [{
+        role: "user",
+        content: [
+          { type: "input_text", text: "Liste uniquement les aliments visibles." },
+          { type: "input_image", image_url: image }
+        ]
+      }]
     });
 
     const ingredients = vision.output_text;
 
-    // 2. Recette
+    // 2️⃣ Recette AVEC GRAMMES (clé pour macros justes)
     const recipeRes = await openai.responses.create({
       model: "gpt-4o-mini",
-      input: `Fais une recette simple, rapide et claire avec ces ingrédients : ${ingredients}`
+      input: `
+Fais une recette pour 1 personne avec ces ingrédients.
+
+OBLIGATOIRE :
+- Donne les quantités en GRAMMES pour chaque ingrédient
+- Étapes simples
+
+Ingrédients :
+${ingredients}
+`
     });
 
-    const recipeText = recipeRes.output_text;
+    const recipe = recipeRes.output_text;
 
-    // 3. MACROS (VERSION FIABLE)
+    // 3️⃣ Macros basées sur les grammes
     const macrosRes = await openai.responses.create({
       model: "gpt-4o-mini",
       input: `
-Tu es un nutritionniste expert.
+Tu es nutritionniste.
 
-Estime les calories et macros de ce plat.
-
-IMPORTANT :
-- utilise des portions normales pour 1 personne
-- sois réaliste et cohérent
-- ne mets jamais 0 sauf si impossible
-
-Aliments :
-${ingredients}
-
-Recette :
-${recipeText}
+À partir des quantités en grammes, calcule les macros.
 
 Réponds UNIQUEMENT en JSON :
 
@@ -75,56 +68,37 @@ Réponds UNIQUEMENT en JSON :
   "carbs": number,
   "fat": number
 }
+
+Recette :
+${recipe}
 `
     });
 
-    let macros;
+    let macros = { calories: 0, protein: 0, carbs: 0, fat: 0 };
 
     try {
-      const cleaned = macrosRes.output_text
-        .replace(/```json/g, "")
-        .replace(/```/g, "")
-        .trim();
+      macros = JSON.parse(
+        macrosRes.output_text.replace(/```json|```/g, "").trim()
+      );
+    } catch {}
 
-      macros = JSON.parse(cleaned);
-
-      // sécurité
-      macros = {
-        calories: macros.calories || 250,
-        protein: macros.protein || 10,
-        carbs: macros.carbs || 20,
-        fat: macros.fat || 10
-      };
-
-    } catch (e) {
-      macros = {
-        calories: 250,
-        protein: 10,
-        carbs: 20,
-        fat: 10
-      };
-    }
-
-    // 4. IMAGE DU PLAT
+    // 4️⃣ Image (optionnelle)
     let imageUrl = null;
 
     try {
       const imageGen = await openai.images.generate({
         model: "gpt-image-1",
-        prompt: `high quality realistic food photo of: ${recipeText}`,
+        prompt: `professional food photography of: ${recipe}`,
         size: "1024x1024"
       });
 
       imageUrl = imageGen.data?.[0]?.url || null;
+    } catch {}
 
-    } catch (err) {
-      console.log("Image error:", err.message);
-    }
-
-    // 5. RESPONSE
+    // 5️⃣ Réponse finale
     res.json({
       ingredients,
-      recipe: recipeText,
+      recipe,
       macros,
       image: imageUrl
     });
