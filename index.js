@@ -27,7 +27,7 @@ app.post("/analyse-image", async (req, res) => {
           content: [
             {
               type: "input_text",
-              text: "Liste les aliments visibles sur cette image de manière simple."
+              text: "Liste simplement les aliments visibles sur cette image."
             },
             {
               type: "input_image",
@@ -48,7 +48,7 @@ app.post("/analyse-image", async (req, res) => {
 
     const recipeText = recipeRes.output_text;
 
-    // 3. Macros (JSON STRICT)
+    // 3. Macros (JSON strict + plus stable)
     const macrosRes = await openai.responses.create({
       model: "gpt-4o-mini",
       input: `
@@ -56,12 +56,12 @@ Tu es un nutritionniste.
 
 Retourne UNIQUEMENT un JSON valide SANS texte ni markdown.
 
-Format exact :
+Format EXACT :
 {
-  "calories": number,
-  "protein": number,
-  "carbs": number,
-  "fat": number
+  "calories": 0,
+  "protein": 0,
+  "carbs": 0,
+  "fat": 0
 }
 
 Recette :
@@ -71,7 +71,12 @@ ${recipeText}
 
     let macros;
     try {
-      macros = JSON.parse(macrosRes.output_text);
+      const cleaned = macrosRes.output_text
+        .replace(/```json/g, "")
+        .replace(/```/g, "")
+        .trim();
+
+      macros = JSON.parse(cleaned);
     } catch (e) {
       macros = {
         calories: 0,
@@ -81,18 +86,27 @@ ${recipeText}
       };
     }
 
-    // 4. Image du plat (optionnel mais stylé)
-    const imageGen = await openai.images.generate({
-      model: "gpt-image-1",
-      prompt: `professional realistic food photography of: ${recipeText}`,
-      size: "1024x1024"
-    });
+    // 4. Image du plat (SAFE VERSION)
+    let imageUrl = null;
 
+    try {
+      const imageGen = await openai.images.generate({
+        model: "gpt-image-1",
+        prompt: `professional high quality food photography of: ${recipeText}`,
+        size: "1024x1024"
+      });
+
+      imageUrl = imageGen?.data?.[0]?.url || null;
+    } catch (e) {
+      console.log("Image generation failed:", e.message);
+    }
+
+    // 5. RESPONSE FINAL
     res.json({
       ingredients,
       recipe: recipeText,
       macros,
-      image: imageGen.data?.[0]?.url || null
+      image: imageUrl
     });
 
   } catch (err) {
