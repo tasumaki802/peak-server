@@ -48,7 +48,7 @@ app.post("/analyse-image", async (req, res) => {
 
     const recipeText = recipeRes.output_text;
 
-    // 3. Macros (JSON strict + plus stable)
+    // 3. Macros (JSON sécurisé)
     const macrosRes = await openai.responses.create({
       model: "gpt-4o-mini",
       input: `
@@ -70,6 +70,7 @@ ${recipeText}
     });
 
     let macros;
+
     try {
       const cleaned = macrosRes.output_text
         .replace(/```json/g, "")
@@ -86,20 +87,8 @@ ${recipeText}
       };
     }
 
-    // 4. Image du plat (SAFE VERSION)
-    let imageUrl = null;
-
-    try {
-      const imageGen = await openai.images.generate({
-        model: "gpt-image-1",
-        prompt: `professional high quality food photography of: ${recipeText}`,
-        size: "1024x1024"
-      });
-
-      imageUrl = imageGen?.data?.[0]?.url || null;
-    } catch (e) {
-      console.log("Image generation failed:", e.message);
-    }
+    // 4. IMAGE (STABLE - PLUS DE BUG)
+    let imageUrl = "https://via.placeholder.com/512?text=Recette";
 
     // 5. RESPONSE FINAL
     res.json({
