@@ -10,11 +10,13 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// ROUTE PRINCIPALE
 app.post("/analyse-image", async (req, res) => {
   try {
     const image = req.body.image;
 
-    const response = await openai.responses.create({
+    // 1. ingrédients
+    const vision = await openai.responses.create({
       model: "gpt-4o-mini",
       input: [
         {
@@ -27,16 +29,43 @@ app.post("/analyse-image", async (req, res) => {
       ]
     });
 
-    const ingredients = response.output_text;
+    const ingredients = vision.output_text;
 
+    // 2. recette
     const recipe = await openai.responses.create({
       model: "gpt-4o-mini",
-      input: `Fais une recette simple avec : ${ingredients}`
+      input: `Fais une recette simple, claire et rapide avec ces ingrédients : ${ingredients}`
+    });
+
+    const recipeText = recipe.output_text;
+
+    // 3. macros
+    const macros = await openai.responses.create({
+      model: "gpt-4o-mini",
+      input: `
+Donne uniquement un JSON propre avec :
+- calories
+- protein
+- carbs
+- fat
+
+pour cette recette :
+${recipeText}
+      `
+    });
+
+    // 4. image du plat
+    const imageGen = await openai.images.generate({
+      model: "gpt-image-1",
+      prompt: `realistic high quality food photo of: ${recipeText}`,
+      size: "1024x1024"
     });
 
     res.json({
       ingredients,
-      recipe: recipe.output_text
+      recipe: recipeText,
+      macros: macros.output_text,
+      image: imageGen.data[0].url
     });
 
   } catch (err) {
@@ -44,4 +73,7 @@ app.post("/analyse-image", async (req, res) => {
   }
 });
 
-app.listen(3000, () => console.log("Server running"));
+// SERVER START
+app.listen(3000, () => {
+  console.log("Server running");
+});
