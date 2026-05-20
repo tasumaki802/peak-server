@@ -14,15 +14,25 @@ app.post("/analyse-image", async (req, res) => {
   try {
     const image = req.body.image;
 
-    // 1. INGREDIENTS
+    if (!image) {
+      return res.status(400).json({ error: "Image manquante" });
+    }
+
+    // 1. Analyse image (ingrédients)
     const vision = await openai.responses.create({
       model: "gpt-4o-mini",
       input: [
         {
           role: "user",
           content: [
-            { type: "input_text", text: "Liste les aliments visibles sur cette image." },
-            { type: "input_image", image_url: image }
+            {
+              type: "input_text",
+              text: "Liste les aliments visibles sur cette image de manière simple."
+            },
+            {
+              type: "input_image",
+              image_url: image
+            }
           ]
         }
       ]
@@ -30,19 +40,23 @@ app.post("/analyse-image", async (req, res) => {
 
     const ingredients = vision.output_text;
 
-    // 2. RECETTE
-    const recipe = await openai.responses.create({
+    // 2. Recette
+    const recipeRes = await openai.responses.create({
       model: "gpt-4o-mini",
-      input: `Fais une recette simple, claire et rapide avec ces ingrédients : ${ingredients}`
+      input: `Fais une recette simple, rapide et claire avec ces ingrédients : ${ingredients}`
     });
 
-    const recipeText = recipe.output_text;
+    const recipeText = recipeRes.output_text;
 
-    // 3. MACROS (JSON PROPRE)
-    const macros = await openai.responses.create({
+    // 3. Macros (JSON STRICT)
+    const macrosRes = await openai.responses.create({
       model: "gpt-4o-mini",
-      input: `Donne uniquement un JSON STRICT sans texte autour :
- 
+      input: `
+Tu es un nutritionniste.
+
+Retourne UNIQUEMENT un JSON valide SANS texte ni markdown.
+
+Format exact :
 {
   "calories": number,
   "protein": number,
@@ -50,16 +64,16 @@ app.post("/analyse-image", async (req, res) => {
   "fat": number
 }
 
-pour cette recette :
-${recipeText}`
+Recette :
+${recipeText}
+      `
     });
 
-    let macrosParsed;
-
+    let macros;
     try {
-      macrosParsed = JSON.parse(macros.output_text);
+      macros = JSON.parse(macrosRes.output_text);
     } catch (e) {
-      macrosParsed = {
+      macros = {
         calories: 0,
         protein: 0,
         carbs: 0,
@@ -67,18 +81,18 @@ ${recipeText}`
       };
     }
 
-    // 4. IMAGE DU PLAT
+    // 4. Image du plat (optionnel mais stylé)
     const imageGen = await openai.images.generate({
       model: "gpt-image-1",
-      prompt: `realistic high quality food photo of: ${recipeText}`,
+      prompt: `professional realistic food photography of: ${recipeText}`,
       size: "1024x1024"
     });
 
     res.json({
       ingredients,
       recipe: recipeText,
-      macros: macrosParsed,
-      image: imageGen.data[0].url
+      macros,
+      image: imageGen.data?.[0]?.url || null
     });
 
   } catch (err) {
@@ -87,5 +101,5 @@ ${recipeText}`
 });
 
 app.listen(3000, () => {
-  console.log("Server running");
+  console.log("Server running on port 3000");
 });
