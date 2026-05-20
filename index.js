@@ -42,7 +42,7 @@ app.post("/analyse-image", async (req, res) => {
     const macros = await openai.responses.create({
       model: "gpt-4o-mini",
       input: `Donne uniquement un JSON STRICT sans texte autour :
-
+ 
 {
   "calories": number,
   "protein": number,
