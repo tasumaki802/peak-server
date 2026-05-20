@@ -18,7 +18,7 @@ app.post("/analyse-image", async (req, res) => {
       return res.status(400).json({ error: "Image manquante" });
     }
 
-    // 1. Analyse image (ingrédients)
+    // 1. ANALYSE IMAGE
     const vision = await openai.responses.create({
       model: "gpt-4o-mini",
       input: [
@@ -40,23 +40,20 @@ app.post("/analyse-image", async (req, res) => {
 
     const ingredients = vision.output_text;
 
-    // 2. Recette
+    // 2. RECETTE
     const recipeRes = await openai.responses.create({
       model: "gpt-4o-mini",
-      input: `Fais une recette simple, rapide et claire avec ces ingrédients : ${ingredients}`
+      input: `Fais une recette simple avec : ${ingredients}`
     });
 
     const recipeText = recipeRes.output_text;
 
-    // 3. Macros (JSON sécurisé)
+    // 3. MACROS (JSON propre)
     const macrosRes = await openai.responses.create({
       model: "gpt-4o-mini",
       input: `
-Tu es un nutritionniste.
+Retourne UNIQUEMENT un JSON :
 
-Retourne UNIQUEMENT un JSON valide SANS texte ni markdown.
-
-Format EXACT :
 {
   "calories": 0,
   "protein": 0,
@@ -64,13 +61,12 @@ Format EXACT :
   "fat": 0
 }
 
-Recette :
+Recette:
 ${recipeText}
       `
     });
 
     let macros;
-
     try {
       const cleaned = macrosRes.output_text
         .replace(/```json/g, "")
@@ -78,19 +74,32 @@ ${recipeText}
         .trim();
 
       macros = JSON.parse(cleaned);
-    } catch (e) {
-      macros = {
-        calories: 0,
-        protein: 0,
-        carbs: 0,
-        fat: 0
-      };
+    } catch {
+      macros = { calories: 0, protein: 0, carbs: 0, fat: 0 };
     }
 
-    // 4. IMAGE (STABLE - PLUS DE BUG)
-    let imageUrl = "https://via.placeholder.com/512?text=Recette";
+    // 4. IMAGE (VERSION CORRIGÉE)
+    let imageUrl = null;
 
-    // 5. RESPONSE FINAL
+    try {
+      const imageGen = await openai.images.generate({
+        model: "gpt-image-1",
+        prompt: `high quality realistic food photo of: ${recipeText}`,
+        size: "1024x1024"
+      });
+
+      // 🔥 IMPORTANT: base64 ou url
+      if (imageGen.data?.[0]?.b64_json) {
+        imageUrl = `data:image/png;base64,${imageGen.data[0].b64_json}`;
+      } else {
+        imageUrl = imageGen.data?.[0]?.url || null;
+      }
+
+    } catch (err) {
+      console.log("IMAGE ERROR:", err.message);
+    }
+
+    // 5. RESPONSE
     res.json({
       ingredients,
       recipe: recipeText,
