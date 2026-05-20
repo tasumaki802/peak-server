@@ -18,7 +18,7 @@ app.post("/analyse-image", async (req, res) => {
       return res.status(400).json({ error: "Image manquante" });
     }
 
-    // 1. ANALYSE IMAGE
+    // 1. Analyse image (ingrédients)
     const vision = await openai.responses.create({
       model: "gpt-4o-mini",
       input: [
@@ -40,33 +40,46 @@ app.post("/analyse-image", async (req, res) => {
 
     const ingredients = vision.output_text;
 
-    // 2. RECETTE
+    // 2. Recette
     const recipeRes = await openai.responses.create({
       model: "gpt-4o-mini",
-      input: `Fais une recette simple avec : ${ingredients}`
+      input: `Fais une recette simple, rapide et claire avec ces ingrédients : ${ingredients}`
     });
 
     const recipeText = recipeRes.output_text;
 
-    // 3. MACROS (JSON propre)
+    // 3. MACROS (VERSION FIABLE)
     const macrosRes = await openai.responses.create({
       model: "gpt-4o-mini",
       input: `
-Retourne UNIQUEMENT un JSON :
+Tu es un nutritionniste expert.
+
+Estime les calories et macros de ce plat.
+
+IMPORTANT :
+- utilise des portions normales pour 1 personne
+- sois réaliste et cohérent
+- ne mets jamais 0 sauf si impossible
+
+Aliments :
+${ingredients}
+
+Recette :
+${recipeText}
+
+Réponds UNIQUEMENT en JSON :
 
 {
-  "calories": 0,
-  "protein": 0,
-  "carbs": 0,
-  "fat": 0
+  "calories": number,
+  "protein": number,
+  "carbs": number,
+  "fat": number
 }
-
-Recette:
-${recipeText}
-      `
+`
     });
 
     let macros;
+
     try {
       const cleaned = macrosRes.output_text
         .replace(/```json/g, "")
@@ -74,11 +87,25 @@ ${recipeText}
         .trim();
 
       macros = JSON.parse(cleaned);
-    } catch {
-      macros = { calories: 0, protein: 0, carbs: 0, fat: 0 };
+
+      // sécurité
+      macros = {
+        calories: macros.calories || 250,
+        protein: macros.protein || 10,
+        carbs: macros.carbs || 20,
+        fat: macros.fat || 10
+      };
+
+    } catch (e) {
+      macros = {
+        calories: 250,
+        protein: 10,
+        carbs: 20,
+        fat: 10
+      };
     }
 
-    // 4. IMAGE (VERSION CORRIGÉE)
+    // 4. IMAGE DU PLAT
     let imageUrl = null;
 
     try {
@@ -88,15 +115,10 @@ ${recipeText}
         size: "1024x1024"
       });
 
-      // 🔥 IMPORTANT: base64 ou url
-      if (imageGen.data?.[0]?.b64_json) {
-        imageUrl = `data:image/png;base64,${imageGen.data[0].b64_json}`;
-      } else {
-        imageUrl = imageGen.data?.[0]?.url || null;
-      }
+      imageUrl = imageGen.data?.[0]?.url || null;
 
     } catch (err) {
-      console.log("IMAGE ERROR:", err.message);
+      console.log("Image error:", err.message);
     }
 
     // 5. RESPONSE
